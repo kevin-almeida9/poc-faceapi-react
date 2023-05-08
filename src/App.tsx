@@ -53,7 +53,7 @@ function App() {
         if (!canvas) throw new Error('')
         if (!video) throw new Error('')
 
-
+        
         canvas.innerHTML = faceapi.createCanvasFromMedia(video) as any 
         const displaySize = {
           width: videoWidth,
