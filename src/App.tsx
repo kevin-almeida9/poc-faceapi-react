@@ -1,7 +1,88 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
-import faceapi from 'face-api.js'
+import * as faceapi from 'face-api.js'
 
+type EllipseMaskProps = {
+  x: number
+  y: number
+  radiusX: number
+  radiusY: number
+  context: CanvasRenderingContext2D
+
+
+}
+
+class EllipseMask {
+  x: number
+  y: number
+  radiusX: number
+  radiusY: number
+  context: CanvasRenderingContext2D
+
+  constructor (props: EllipseMaskProps ){
+    this.x = props.x
+    this.y = props.y
+    this.radiusX = props.radiusX
+    this.radiusY = props.radiusY
+    this.context = props.context
+  }
+
+  message (text: string) {
+    const canvasCenterPosition = this.context.canvas.width/2
+    const positionY = this.y + this.radiusY + 20
+
+    this.context.font = "24px serif"
+    this.context.textAlign = "center"
+    this.context.fillText(text, canvasCenterPosition, positionY, this.context.canvas.width - 10)
+  }
+
+  draw () {
+    this.context.beginPath()
+    this.context.ellipse(this.x, this.y, this.radiusX, this.radiusY, 0, 0, Math.PI*2)
+    this.context.stroke()    
+  }
+
+  error (text: string) {
+    this.context.strokeStyle = 'red' 
+    this.context.lineWidth = 5
+    this.draw()
+    this.message(text)
+  }
+
+  success () {
+    this.context.strokeStyle = 'green' 
+    this.context.lineWidth = 5
+    this.draw()
+  }
+
+  isPointInsideMask (  pointX: number, pointY: number) {
+    const distanceX = Math.abs(pointX - this.x)
+    const distanceY = Math.abs(pointY - this.y)
+
+    const isInside = ((Math.pow(distanceX, 2) /  Math.pow(this.radiusX, 2)) + (Math.pow(distanceY, 2) / Math.pow(this.radiusY, 2)))
+    return isInside <= 1
+  }
+
+
+  isFaceInsideMask (face: faceapi.Box): string {
+    const {bottomLeft, bottomRight, topLeft, topRight} = face
+
+    const isVertexAInside = this.isPointInsideMask(topLeft.x, topLeft.y)
+    const isVertexBInside = this.isPointInsideMask(topRight.x, topRight.y)
+    const isVertexCInside = this.isPointInsideMask(bottomLeft.x, bottomLeft.y)
+    const isVertexDInside = this.isPointInsideMask(bottomRight.x, bottomRight.y)
+  
+    if (isVertexAInside && isVertexBInside && isVertexCInside && isVertexDInside) return ''
+    return 'Ajuste seu rosto para área demarcada'
+  }
+
+  isFacelLandMarksInsideMask (points: faceapi.Point[]): string {
+    const result = points.every(point => this.isPointInsideMask(point.x, point.y))
+
+    if (result) return ''
+    return 'Ajuste seu rosto para área demarcada'
+  }
+}
 
 function App() {
   const videoRef =  useRef<HTMLVideoElement>(null)
@@ -9,21 +90,22 @@ function App() {
 
   const [modelsLoaded, setModelsLoaded] = useState(false)
   const [captureVideo, setCaptureVideo] = useState(false)
+  const [intervalRef, setintervalRef] = useState< ReturnType<typeof setInterval> | null>(null)
 
   const videoHeight = 480
   const videoWidth = 640
+
   
   useEffect(() => {
     const loadModels = async () => {
-      const MODEL_URL =  '../public/models'
-
-      Promise.all([
-        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-        faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-        faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
-      ])
-      .then(() => setModelsLoaded(true))
+      const MODEL_URL =  '/models'
+      try {
+        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+        setModelsLoaded(true)
+      } catch (err) {
+        console.log
+      }
     }
 
     loadModels()
@@ -31,50 +113,16 @@ function App() {
 
   const startVideo = () => {
     setCaptureVideo(true)
-    navigator?.mediaDevices
-      .getUserMedia({ video: { width: 300 } })
-      .then(stream => {
-        const video = videoRef.current
-        if(!video) throw new Error('Não foi possível encontrar o video.')
+    navigator?.mediaDevices?.getUserMedia({ video: { width: 300 } })
+    .then(stream => {
+      const video = videoRef.current
+      if(!video) throw new Error('Não foi possível encontrar o video.')
         video.srcObject = stream
         video.play()
       })
       .catch(err => {
-        console.error("error:", err)
+        console.error(`Error [startVideo]: ${err}`)
       })
-  }
-
-  const handleVideoOnPlay = () => {
-    setInterval(async () => {
-      try {
-        const canvas =  canvasRef.current
-        const video = videoRef.current
-
-        if (!canvas) throw new Error('')
-        if (!video) throw new Error('')
-
-        
-        canvas.innerHTML = faceapi.createCanvasFromMedia(video) as any 
-        const displaySize = {
-          width: videoWidth,
-          height: videoHeight
-        }
-
-        faceapi.matchDimensions(canvas, displaySize)
-
-        const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceExpressions()
-
-        const resizedDetections = faceapi.resizeResults(detections, displaySize)
-
-        canvas.getContext('2d')?.clearRect(0, 0, videoWidth, videoHeight)
-        faceapi.draw.drawDetections(canvas, resizedDetections)
-        faceapi.draw.drawFaceLandmarks(canvas, resizedDetections)
-        faceapi.draw.drawFaceExpressions(canvas, resizedDetections)
-        
-      } catch (err) {
-        console.log(err)
-      }
-    }, 100)
   }
 
   const closeWebcam = () => {
@@ -82,12 +130,67 @@ function App() {
       const video = videoRef.current
       if (!video) throw new Error('Não foi possível encontrar o video.')
       video.pause()
-      // video.srcObject?.getTracks()[0].stop()
+      if (video.srcObject && 'getTracks' in video.srcObject) video.srcObject.getTracks()[0].stop()
+      
+      if (intervalRef) {
+        clearInterval(intervalRef)
+        setintervalRef(null)
+      }
       setCaptureVideo(false)
     } catch (err) {
       console.log(err)
     }
   }
+
+
+  const handleVideoOnPlay = () => {
+    const canvas =  canvasRef.current
+    const video = videoRef.current
+
+    if (!canvas) throw new Error('Não foi possível encontrar o canvas')
+    if (!video) throw new Error('Não foi possível encontrar o video')
+        
+    const canvasContext = canvas.getContext('2d')
+    if (!canvasContext) throw new Error('Não foi possível encontrar o context do canvas')
+
+    const ellipseMask = new EllipseMask({
+      x:videoWidth/2, 
+      y: videoHeight/2, 
+      radiusX: videoWidth/5,
+      radiusY: videoHeight/2.75,
+      context: canvasContext,
+    })
+    
+    const displaySize = {
+      width: videoWidth,
+      height: videoHeight
+    }
+
+
+    const interval = setInterval(async () => {
+      try {
+
+        faceapi.matchDimensions(canvas, displaySize)
+        
+        const detections = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks()
+        if (!detections) return ellipseMask.error('Não foi possível localizar seu rosto.')
+        
+        const resizedDetections = faceapi.resizeResults(detections, displaySize)
+        if (!resizedDetections) throw new Error('Não foi possível enquadrar o rosto.')
+
+        const errorMessage = ellipseMask.isFacelLandMarksInsideMask(resizedDetections.landmarks.positions)
+        if (errorMessage) return ellipseMask.error(errorMessage)
+      
+        ellipseMask.success()
+        
+      } catch (err) {
+        console.log(err)
+      }
+    }, 1000)
+
+    setintervalRef(interval)
+  }
+
 
   return (
     <div>
