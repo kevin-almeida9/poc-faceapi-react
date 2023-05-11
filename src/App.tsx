@@ -59,24 +59,21 @@ class EllipseMask {
     const distanceX = Math.abs(pointX - this.x)
     const distanceY = Math.abs(pointY - this.y)
 
-    const isInside = ((Math.pow(distanceX, 2) /  Math.pow(this.radiusX, 2)) + (Math.pow(distanceY, 2) / Math.pow(this.radiusY, 2)))
-    return isInside <= 1
+    const isInside = ((Math.pow(distanceX, 2) /  Math.pow(this.radiusX, 2)) + (Math.pow(distanceY, 2) / Math.pow(this.radiusY, 2))) <= 1
+    return isInside 
   }
 
 
-  isFaceInsideMask (face: faceapi.Box): string {
+  isFaceBoxInsideMask (face: faceapi.Box): string {
     const {bottomLeft, bottomRight, topLeft, topRight} = face
+    const points = [bottomLeft, bottomRight, topLeft, topRight]
+    const result = points.every(point => this.isPointInsideMask(point.x, point.y))
 
-    const isVertexAInside = this.isPointInsideMask(topLeft.x, topLeft.y)
-    const isVertexBInside = this.isPointInsideMask(topRight.x, topRight.y)
-    const isVertexCInside = this.isPointInsideMask(bottomLeft.x, bottomLeft.y)
-    const isVertexDInside = this.isPointInsideMask(bottomRight.x, bottomRight.y)
-  
-    if (isVertexAInside && isVertexBInside && isVertexCInside && isVertexDInside) return ''
+    if (result) return ''
     return 'Ajuste seu rosto para área demarcada'
   }
 
-  isFacelLandMarksInsideMask (points: faceapi.Point[]): string {
+  isFacelPointsInsideMask (points: faceapi.Point[]): string {
     const result = points.every(point => this.isPointInsideMask(point.x, point.y))
 
     if (result) return ''
@@ -86,7 +83,8 @@ class EllipseMask {
 
 function App() {
   const videoRef =  useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const faceApiCanvasRef = useRef<HTMLCanvasElement>(null)
+  const maskFrameCanvasRef = useRef<HTMLCanvasElement>(null)
 
   const [modelsLoaded, setModelsLoaded] = useState(false)
   const [captureVideo, setCaptureVideo] = useState(false)
@@ -113,6 +111,9 @@ function App() {
 
   const startVideo = () => {
     setCaptureVideo(true)
+    console.log({
+      navigator: navigator.mediaDevices
+    })
     navigator?.mediaDevices?.getUserMedia({ video: { width: 300 } })
     .then(stream => {
       const video = videoRef.current
@@ -144,7 +145,7 @@ function App() {
 
 
   const handleVideoOnPlay = () => {
-    const canvas =  canvasRef.current
+    const canvas =  faceApiCanvasRef.current
     const video = videoRef.current
 
     if (!canvas) throw new Error('Não foi possível encontrar o canvas')
@@ -178,7 +179,7 @@ function App() {
         const resizedDetections = faceapi.resizeResults(detections, displaySize)
         if (!resizedDetections) throw new Error('Não foi possível enquadrar o rosto.')
 
-        const errorMessage = ellipseMask.isFacelLandMarksInsideMask(resizedDetections.landmarks.positions)
+        const errorMessage = ellipseMask.isFacelPointsInsideMask(resizedDetections.landmarks.positions)
         if (errorMessage) return ellipseMask.error(errorMessage)
       
         ellipseMask.success()
@@ -212,7 +213,8 @@ function App() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'center', padding: '10px' }}>
                 <video ref={videoRef} height={videoHeight} width={videoWidth} onPlay={handleVideoOnPlay} style={{ borderRadius: '10px' }} />
-                <canvas ref={canvasRef} style={{ position: 'absolute' }} />
+                <canvas ref={faceApiCanvasRef} style={{ position: 'absolute' }} />
+                <canvas ref={maskFrameCanvasRef} style={{ position: 'absolute' }} />
               </div>
             </div>
             :
